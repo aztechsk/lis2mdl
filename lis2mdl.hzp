@@ -1,0 +1,16 @@
+<!DOCTYPE CrossStudio_Project_File>
+<solution Name="lis2mdl" target="8" version="2">
+  <project Name="lis2mdl">
+    <configuration
+      Name="Common"
+      c_only_additional_options="-Wall;-Wextra;-Wstrict-prototypes;-Wmissing-prototypes;-Wmissing-declarations;-Wshadow;-Wpointer-arith;-Wbad-function-cast;-Wcast-align;-Wcast-qual;-Wjump-misses-init;-Wno-unused-parameter;-Wundef"
+      c_system_include_directories="$(TargetsDir)/CMSIS_3/CMSIS/Include;$(ProjectDir)/../freertos/src/inc"
+      c_user_include_directories="$(ProjectDir)/../inc;$(ProjectDir)/../sys/src;$(ProjectDir)/../ucdrv/inc;$(ProjectDir)/../ucdrv/src;$(ProjectDir)/../hal/src/inc"
+      project_directory=""
+      project_type="Library" />
+    <folder Name="src">
+      <file Name="lis2mdl.c" file_name="src/lis2mdl.c" />
+      <file Name="lis2mdl.h" file_name="src/lis2mdl.h" />
+    </folder>
+  </project>
+</solution>
