@@ -5,12 +5,16 @@
       Name="Common"
       c_only_additional_options="-Wall;-Wextra;-Wstrict-prototypes;-Wmissing-prototypes;-Wmissing-declarations;-Wshadow;-Wpointer-arith;-Wbad-function-cast;-Wcast-align;-Wcast-qual;-Wjump-misses-init;-Wno-unused-parameter;-Wundef"
       c_system_include_directories="$(TargetsDir)/CMSIS_3/CMSIS/Include;$(ProjectDir)/../freertos/src/inc"
-      c_user_include_directories="$(ProjectDir)/../inc;$(ProjectDir)/../sys/src;$(ProjectDir)/../ucdrv/inc;$(ProjectDir)/../ucdrv/src;$(ProjectDir)/../hal/src/inc"
+      c_user_include_directories="$(ProjectDir)/../inc;$(ProjectDir)/../sys/src;$(ProjectDir)/../ucdrv/inc;$(ProjectDir)/../ucdrv/src;$(ProjectDir)/../hal/src/inc;$(ProjectDir)/../cmdln/src"
       project_directory=""
       project_type="Library" />
     <folder Name="src">
       <file Name="lis2mdl.c" file_name="src/lis2mdl.c" />
       <file Name="lis2mdl.h" file_name="src/lis2mdl.h" />
+      <file Name="lis2mdl_stm_intr.c" file_name="src/lis2mdl_stm_intr.c" />
+      <file Name="lis2mdl_stm_intr.h" file_name="src/lis2mdl_stm_intr.h" />
+      <file Name="lis2mdl_stm_regs.c" file_name="src/lis2mdl_stm_regs.c" />
+      <file Name="lis2mdl_stm_regs.h" file_name="src/lis2mdl_stm_regs.h" />
     </folder>
   </project>
 </solution>
