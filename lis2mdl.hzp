@@ -13,6 +13,8 @@
       <file Name="lis2mdl.h" file_name="src/lis2mdl.h" />
       <file Name="lis2mdl_stm_intr.c" file_name="src/lis2mdl_stm_intr.c" />
       <file Name="lis2mdl_stm_intr.h" file_name="src/lis2mdl_stm_intr.h" />
+      <file Name="lis2mdl_stm_cont.c" file_name="src/lis2mdl_stm_cont.c" />
+      <file Name="lis2mdl_stm_cont.h" file_name="src/lis2mdl_stm_cont.h" />
       <file Name="lis2mdl_stm_regs.c" file_name="src/lis2mdl_stm_regs.c" />
       <file Name="lis2mdl_stm_regs.h" file_name="src/lis2mdl_stm_regs.h" />
     </folder>

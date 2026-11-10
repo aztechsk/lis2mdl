@@ -5,10 +5,17 @@
  * (c) 2025 AZTech.
  */
 
+/**
+ * @file lis2mdl_stm_regs.c
+ * @brief Periodic LIS2MDL acquisition using status-register polling.
+ *
+ * Implements a FreeRTOS state machine that resets and configures the sensor,
+ * triggers single measurements, polls ZYXDA, reads magnetic and temperature
+ * data and reports results. Errors restart the state machine after a delay.
+ */
+
 #include <FreeRTOS.h>
 #include <task.h>
-#include <semphr.h>
-#include <queue.h>
 #include <stdio.h>
 #include <gentyp.h>
 #include "sysconf.h"
@@ -19,11 +26,17 @@
 #include "criterr.h"
 #include "hwerr.h"
 #include "cmdln.h"
-#include "gpio_hal.h"
 #include "lis2mdl.h"
 #include "lis2mdl_stm_regs.h"
 
 #if LIS2MDL_SENSOR_MODE == LIS2MDL_REGS_MODE
+
+#ifndef LIS2MDL_LPF
+#error "LIS2MDL_LPF not defined; define it in sysconf.h"
+#endif
+#if LIS2MDL_LPF != 0 && LIS2MDL_LPF != 1
+#error "LIS2MDL_LPF must be 0 or 1"
+#endif
 
 #define RESET_STM_TMO_MS 5000U
 #if LIS2MDL_REPORT_FN == 1
@@ -35,7 +48,7 @@ static TaskHandle_t tsk_hndl;
 static struct lis2mdl_dsc lis2mdl_dsc;
 static lis2mdl lis = &lis2mdl_dsc;
 static p_stf_t stmf;
-static TickType_t xLastWakeTime;
+static TickType_t last_wake_time;
 #if LIS2MDL_REPORT_FN == 1
 static boolean_t (*report_clbk)(const char *);
 static char *report_buf;
@@ -53,7 +66,6 @@ static struct {
 } stats;
 
 static gfp_t state_sw_reset(void);
-static gfp_t state_whoami_check(void) __attribute__((unused));
 static gfp_t state_chip_config(void);
 static gfp_t state_verify_chip_config(void);
 static gfp_t state_measure_start(void);
@@ -63,7 +75,7 @@ static gfp_t state_wait_result(void);
 static gfp_t state_get_data(void);
 static gfp_t state_error(void);
 static void tsk(void *p);
-static void report_data(struct lis2mdl_data *mag_data, int16_t *temp);
+static void report_data(const struct lis2mdl_data *mag_data, const int16_t *temp);
 static void cmd_liss(void);
 
 /**
@@ -76,15 +88,15 @@ void init_lis2mdl_stm_regs(void)
 	lis->i2c_addr = 0x1E;
 	init_lis2mdl(lis);
 #if LIS2MDL_REPORT_FN == 1
-	if (NULL == (report_buf = pvPortMalloc(LIS2MDL_REPORT_BUF_SIZE))) {
+	if ((report_buf = pvPortMalloc(LIS2MDL_REPORT_BUF_SIZE)) == NULL) {
 		crit_err_exit(MALLOC_ERROR);
 	}
 #endif
 	add_command_noargs("liss", cmd_liss);
-        if (pdPASS != xTaskCreate(tsk, "LIS2MDL", LIS2MDL_TASK_STACK_SIZE, NULL,
-                                  LIS2MDL_TASK_PRIO, &tsk_hndl)) {
-                crit_err_exit(MALLOC_ERROR);
-        }
+	if (xTaskCreate(tsk, "LIS2MDL", LIS2MDL_TASK_STACK_SIZE, NULL,
+			LIS2MDL_TASK_PRIO, &tsk_hndl) != pdPASS) {
+		crit_err_exit(MALLOC_ERROR);
+	}
 }
 
 #if LIS2MDL_REPORT_FN == 1
@@ -114,22 +126,6 @@ static gfp_t state_sw_reset(void)
 }
 
 /**
- * state_whoami_check
- */
-static gfp_t state_whoami_check(void)
-{
-	int ret;
-
-	ret = lis2mdl_whoami_check(lis);
-	if (ret) {
-		msg(INF, "LIS2MDL: WHOAMI check error (%s)\n", hwerr_str(ret));
-		return ((gfp_t) state_error);
-	}
-	vTaskDelay(ms_to_os_ticks(50));
-	return ((gfp_t) state_chip_config);
-}
-
-/**
  * state_chip_config
  */
 static gfp_t state_chip_config(void)
@@ -143,7 +139,7 @@ static gfp_t state_chip_config(void)
 		msg(INF, "LIS2MDL: CFG_R_A write error (%s)\n", hwerr_str(ret));
 		return ((gfp_t) state_error);
 	}
-	r = 0;
+	r = LIS2MDL_LPF ? LIS2MDL_CFG_B_LPF : 0;
 	ret = lis2mdl_write_cfg_r(lis, LIS2MDL_CFG_R_B, r, LIS2MDL_WRITE_VERIFY_YES);
 	if (ret) {
 		msg(INF, "LIS2MDL: CFG_R_B write error (%s)\n", hwerr_str(ret));
@@ -198,7 +194,7 @@ static gfp_t state_measure_start(void)
 		msg(INF, "LIS2MDL: read_temp() error (%s)\n", hwerr_str(ret));
 		return ((gfp_t) state_error);
 	}
-	xLastWakeTime = xTaskGetTickCount() - ms_to_os_ticks(LIS2MDL_MEASURE_PERIOD_MS);
+	last_wake_time = xTaskGetTickCount() - ms_to_os_ticks(LIS2MDL_MEASURE_PERIOD_MS);
 	return ((gfp_t) state_measure_cycle);
 }
 
@@ -210,7 +206,7 @@ static gfp_t state_measure_cycle(void)
 	int ret;
 	uint8_t r;
 
-	vTaskDelayUntil(&xLastWakeTime, ms_to_os_ticks(LIS2MDL_MEASURE_PERIOD_MS));
+	vTaskDelayUntil(&last_wake_time, ms_to_os_ticks(LIS2MDL_MEASURE_PERIOD_MS));
 	r = (lis->cfg_r_a & ~LIS2MDL_CFG_A_MD_MSK) | LIS2MDL_CFG_A_MD(LIS2MDL_CFG_A_MD_SINGLE);
 	ret = lis2mdl_write_cfg_r(lis, LIS2MDL_CFG_R_A, r, LIS2MDL_WRITE_VERIFY_NO);
 	if (ret) {
@@ -254,7 +250,7 @@ static gfp_t state_wait_result(void)
 		if (stat & LIS2MDL_STAT_ZYXDA) {
 			if (stat & (LIS2MDL_STAT_ZYXOV | LIS2MDL_STAT_ZOV | LIS2MDL_STAT_YOV | LIS2MDL_STAT_XOV)) {
 				stats.data_ovf_cnt++;
-				msg(INF, "LIS2MDL: unexpected data overflow\n");
+				msg(INF, "LIS2MDL: unexpected data overrun\n");
 				return ((gfp_t) state_error);
 			}
 			if (cnt > stats.max_wait_cnt) {
@@ -333,7 +329,7 @@ static void tsk(void *p)
 /**
  * report_data
  */
-static void report_data(struct lis2mdl_data *mag_data, int16_t *temp)
+static void report_data(const struct lis2mdl_data *mag_data, const int16_t *temp)
 {
 #if (LIS2MDL_REPORT_LSB == 1 || LIS2MDL_REPORT_MG == 1 || LIS2MDL_REPORT_SI == 1 || LIS2MDL_REPORT_FN == 1) && \
      LIS2MDL_REPORT_MSG_NUM == 1
@@ -367,38 +363,27 @@ static void report_data(struct lis2mdl_data *mag_data, int16_t *temp)
 		FIELD_BUF_M = 12,
 		FIELD_BUF_T = 13
 	};
-	int32_t x_tmp, y_tmp, z_tmp;
-	int32_t x_ut, y_ut, z_ut, t_mc;
+	int32_t x_centi_ut, y_centi_ut, z_centi_ut;
+	int32_t x_abs, y_abs, z_abs, t_mc;
 	char xs[FIELD_BUF_M], ys[FIELD_BUF_M], zs[FIELD_BUF_M], ts[FIELD_BUF_T];
-
-	x_tmp = (int32_t) mag_data->x_val * 15;
-	y_tmp = (int32_t) mag_data->y_val * 15;
-	z_tmp = (int32_t) mag_data->z_val * 15;
-	if (x_tmp < 0) {
-		x_ut = -((-x_tmp + 50) / 100);
-	} else {
-		x_ut = (x_tmp + 50) / 100;
-	}
-	if (y_tmp < 0) {
-		y_ut = -((-y_tmp + 50) / 100);
-	} else {
-		y_ut = (y_tmp + 50) / 100;
-	}
-	if (z_tmp < 0) {
-		z_ut = -((-z_tmp + 50) / 100);
-	} else {
-		z_ut = (z_tmp + 50) / 100;
-	}
+	x_centi_ut = (int32_t) mag_data->x_val * 15;
+	y_centi_ut = (int32_t) mag_data->y_val * 15;
+	z_centi_ut = (int32_t) mag_data->z_val * 15;
+	x_abs = x_centi_ut < 0 ? -x_centi_ut : x_centi_ut;
+	y_abs = y_centi_ut < 0 ? -y_centi_ut : y_centi_ut;
+	z_abs = z_centi_ut < 0 ? -z_centi_ut : z_centi_ut;
 	t_mc = 25000 + (int32_t) *temp * 125;
-	snprintf(xs, sizeof(xs), "%+ld", (long) x_ut);
-	snprintf(ys, sizeof(ys), "%+ld", (long) y_ut);
-	snprintf(zs, sizeof(zs), "%+ld", (long) z_ut);
+	snprintf(xs, sizeof(xs), "%c%ld.%02ld", x_centi_ut < 0 ? '-' : '+',
+		(long) (x_abs / 100), (long) (x_abs % 100));
+	snprintf(ys, sizeof(ys), "%c%ld.%02ld", y_centi_ut < 0 ? '-' : '+',
+		(long) (y_abs / 100), (long) (y_abs % 100));
+	snprintf(zs, sizeof(zs), "%c%ld.%02ld", z_centi_ut < 0 ? '-' : '+',
+		(long) (z_abs / 100), (long) (z_abs % 100));
 	{
 		char sign = '+';
 		int32_t t_abs = t_mc;
 		int32_t t_c0;
 		int32_t t_frac;
-
 		if (t_mc < 0) {
 			sign = '-';
 			t_abs = -t_mc;

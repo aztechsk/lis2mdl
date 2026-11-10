@@ -2,7 +2,7 @@
 
 Embedded C driver for the STMicroelectronics LIS2MDL three-axis digital magnetometer.
 
-The project consists of a low-level driver for direct sensor access and two optional FreeRTOS state-machine layers for periodic magnetic-field measurements.
+The project consists of a low-level driver for direct sensor access and three optional FreeRTOS state-machine layers for periodic magnetic-field measurements.
 
 The low-level driver supports I2C and SPI communication and provides access to sensor configuration, status information, magnetic-field data, temperature data and offset registers.
 
@@ -18,7 +18,8 @@ The low-level driver supports I2C and SPI communication and provides access to s
 - Sensor status access
 - Optional FreeRTOS state machine using status-register polling
 - Optional FreeRTOS state machine using the data-ready interrupt
-- Periodic single-measurement acquisition
+- Optional continuous 10 Hz state machine using the data-ready interrupt
+- Periodic single-measurement and autonomous continuous acquisition
 - Optional formatted measurement reporting and report callback
 
 ## Files
@@ -59,6 +60,21 @@ Public interface of the interrupt-driven state-machine layer.
 
 It provides initialization and, when enabled, registration of a measurement report callback.
 
+### `lis2mdl_stm_cont.c`
+
+FreeRTOS state-machine layer using the LIS2MDL data-ready interrupt in continuous 10 Hz mode.
+
+It configures the sensor once and processes measurements as they become available; it does not trigger each sample.
+The low-pass filter and sensor offset cancellation are independently enabled through `LIS2MDL_LPF` and
+`LIS2MDL_OFFSET_CANC` in the target project's `sysconf.h`. Each option is disabled at 0 and enabled at 1.
+Offset cancellation is automatic in continuous mode and does not replace hard-iron compensation.
+
+### `lis2mdl_stm_cont.h`
+
+Public interface and configuration documentation for the continuous-mode state machine.
+
+It provides initialization and, when enabled, registration of a measurement report callback.
+
 ## Dependencies
 
 The low-level driver depends on:
@@ -75,7 +91,7 @@ These dependencies are intentionally kept outside this repository and must be pr
 
 An application may use the low-level driver directly when it needs explicit control over sensor configuration and data acquisition.
 
-For periodic measurements, one of the supplied state-machine layers can be selected according to the application requirements. The register-polling variant detects completed measurements through the sensor status register, while the interrupt-driven variant uses the LIS2MDL data-ready output.
+For periodic measurements, one of the supplied state-machine layers can be selected according to the application requirements. The register-polling and interrupt-driven single-measurement variants trigger samples at a task-defined interval. The continuous variant uses the sensor's own 10 Hz ODR and a data-ready interrupt; it requires `LIS2MDL_CONT_MODE` to be selected in the target project's `sysconf.h` and a call to `init_lis2mdl_stm_cont()` during startup.
 
 Bus selection, sensor timing, GPIO assignment and optional reporting are target-specific and are expected to be configured by the surrounding project.
 

@@ -10,6 +10,7 @@ TARGET  := $(OUT)/$(PROJECT).a
 SRCS := \
 	src/lis2mdl.c \
 	src/lis2mdl_stm_intr.c \
+	src/lis2mdl_stm_cont.c \
 	src/lis2mdl_stm_regs.c
 
 OBJS := $(addprefix $(OUT)/,$(notdir $(SRCS:.c=.o)))

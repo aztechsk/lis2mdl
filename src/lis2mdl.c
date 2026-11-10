@@ -16,14 +16,20 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+/**
+ * @file lis2mdl.c
+ * @brief Register-level access to the LIS2MDL magnetometer.
+ *
+ * Implements synchronous I2C/SPI register transfers, device identification,
+ * magnetic and temperature data reads, configuration and offset registers,
+ * status reads, and the sensor reset/reboot sequence.
+ */
+
 #include <FreeRTOS.h>
 #include <task.h>
-#include <semphr.h>
-#include <queue.h>
 #include <gentyp.h>
 #include <string.h>
 #include "sysconf.h"
-#include <mmio.h>
 #include "msgconf.h"
 #include "criterr.h"
 #include "dlycnt.h"
@@ -31,9 +37,26 @@
 #include "lis2mdl.h"
 
 #define LIS2MDL_WHO_AM_I_ID 0x40
-#define SPI_HAL_SHORT_TRANS SPI_HAL_POLL
-#define SPI_HAL_LONG_TRANS SPI_HAL_DMA
+#define LIS2MDL_SPI_SHORT_TRANS SPI_HAL_POLL
+#define LIS2MDL_SPI_LONG_TRANS SPI_HAL_DMA
 #define REBOOT_DELAY_MS 25
+
+#ifndef LIS2MDL_HARDIRON_EN
+#error "LIS2MDL_HARDIRON_EN must be defined"
+#endif
+#if LIS2MDL_HARDIRON_EN != 0 && LIS2MDL_HARDIRON_EN != 1
+#error "LIS2MDL_HARDIRON_EN must be 0 or 1"
+#endif
+#if LIS2MDL_HARDIRON_EN == 1
+#if !defined(LIS2MDL_HARDIRON_X) || !defined(LIS2MDL_HARDIRON_Y) || !defined(LIS2MDL_HARDIRON_Z)
+#error "LIS2MDL_HARDIRON_X/Y/Z must be defined"
+#endif
+#if LIS2MDL_HARDIRON_X < -32768 || LIS2MDL_HARDIRON_X > 32767 || \
+    LIS2MDL_HARDIRON_Y < -32768 || LIS2MDL_HARDIRON_Y > 32767 || \
+    LIS2MDL_HARDIRON_Z < -32768 || LIS2MDL_HARDIRON_Z > 32767
+#error "LIS2MDL_HARDIRON_X/Y/Z must fit int16_t"
+#endif
+#endif
 
 /**
  * init_lis2mdl
@@ -56,11 +79,11 @@ int lis2mdl_reg_read(lis2mdl lis, enum lis2mdl_reg_adr adr, void *data, int n)
 	if (lis->bus == LIS2MDL_SPI_BUS) {
 #endif
 #if LIS2MDL_SPI == 1
-		enum spi_hal_xfer_type xt = (n > 1) ? SPI_HAL_LONG_TRANS : SPI_HAL_SHORT_TRANS;
+		enum spi_hal_xfer_type xt = (n > 1) ? LIS2MDL_SPI_LONG_TRANS : LIS2MDL_SPI_SHORT_TRANS;
 		uint8_t hdr = 0x80 | (adr & 0x7F);
 		uint8_t *rx = (uint8_t *) data;
 		for (int i = 0; i < n; i++) {
-			 rx[i] = 0xFF;
+			rx[i] = 0xFF;
 		}
 		return (spi_hal_xfer(&lis->spi, xt, &hdr, 1, data, n));
 #endif
@@ -86,7 +109,7 @@ int lis2mdl_reg_write(lis2mdl lis, enum lis2mdl_reg_adr adr, void *data, int n, 
 	if (lis->bus == LIS2MDL_SPI_BUS) {
 #endif
 #if LIS2MDL_SPI == 1
-		enum spi_hal_xfer_type xt = (n > 1) ? SPI_HAL_LONG_TRANS : SPI_HAL_SHORT_TRANS;
+		enum spi_hal_xfer_type xt = (n > 1) ? LIS2MDL_SPI_LONG_TRANS : LIS2MDL_SPI_SHORT_TRANS;
 		uint8_t hdr = (adr & 0x7F);
 		if (ro_data) {
 			uint8_t l_data[n];
@@ -271,7 +294,7 @@ int lis2mdl_read_offs_rgs(lis2mdl lis, struct lis2mdl_data *rgs)
 /**
  * lis2mdl_write_offs_rgs
  */
-int lis2mdl_write_offs_rgs(lis2mdl lis, struct lis2mdl_data *rgs)
+int lis2mdl_write_offs_rgs(lis2mdl lis, const struct lis2mdl_data *rgs)
 {
 	uint8_t reg[6];
 
@@ -299,6 +322,14 @@ int lis2mdl_soft_reset(lis2mdl lis)
 {
 	int ret;
 	uint8_t r;
+#if LIS2MDL_HARDIRON_EN == 1
+	struct lis2mdl_data offs = {
+		.x_val = LIS2MDL_HARDIRON_X,
+		.y_val = LIS2MDL_HARDIRON_Y,
+		.z_val = LIS2MDL_HARDIRON_Z
+	};
+	struct lis2mdl_data rb;
+#endif
 
 	r = LIS2MDL_CFG_A_SOFT_RST;
 	if ((ret = lis2mdl_reg_write(lis, LIS2MDL_CFG_A_REG, &r, 1, FALSE))) {
@@ -334,5 +365,16 @@ int lis2mdl_soft_reset(lis2mdl lis)
 	if ((ret = lis2mdl_whoami_check(lis))) {
 		return (ret);
 	}
+#if LIS2MDL_HARDIRON_EN == 1
+	if ((ret = lis2mdl_write_offs_rgs(lis, &offs))) {
+		return (ret);
+	}
+	if ((ret = lis2mdl_read_offs_rgs(lis, &rb))) {
+		return (ret);
+	}
+	if (rb.x_val != offs.x_val || rb.y_val != offs.y_val || rb.z_val != offs.z_val) {
+		return (-EDATA);
+	}
+#endif
 	return (0);
 }
