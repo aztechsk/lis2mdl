@@ -30,7 +30,8 @@
  * intrinsic sensor offset; it is not hard-iron compensation. No additional
  * sample averaging is performed by the task. With offset cancellation, the
  * first data-ready event may take longer than one nominal 100 ms period.
- * Hard-iron offset registers are not programmed by this state machine.
+ * The common soft-reset function programs and verifies hard-iron offset
+ * registers when LIS2MDL_HARDIRON_EN is 1.
  *
  * @par DRDY acquisition and recovery
  * LIS2MDL_INT_CONT/LIS2MDL_INT_PIN are board-defined. The pin is configured
@@ -53,6 +54,10 @@
  * - LIS2MDL_LPF: 0 disables the digital low-pass filter; 1 enables it.
  * - LIS2MDL_OFFSET_CANC: 0 disables sensor offset cancellation; 1 enables
  *   automatic offset cancellation in continuous mode. Independent of LPF.
+ * - LIS2MDL_HARDIRON_EN: 0 skips hard-iron offset programming;
+ *   1 writes and reads back LIS2MDL_HARDIRON_X/Y/Z on each reset.
+ * - LIS2MDL_HARDIRON_X/Y/Z: signed 16-bit offset values (LSB),
+ *   required when LIS2MDL_HARDIRON_EN is 1.
  * - LIS2MDL_DEBUG_STAT: log raw STATUS_REG after DRDY when set to 1.
  * - LIS2MDL_REPORT_LSB: log raw X/Y/Z and raw temperature when set to 1.
  * - LIS2MDL_REPORT_MG: log X/Y/Z in mG and temperature in degC when set to 1.

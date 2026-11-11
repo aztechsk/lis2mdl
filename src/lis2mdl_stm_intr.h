@@ -22,8 +22,9 @@
  *   by LIS2MDL_LPF; offset cancellation and other options disabled.
  * - CFG_REG_C = 0x11: block data update (BDU) and DRDY pin output enabled;
  *   self-test and 4-wire SPI disabled.
- * The state machine does not program hard-iron offset registers. The ODR
- * field does not set the rate of software-triggered single measurements.
+ * The common soft-reset function programs and verifies hard-iron offset
+ * registers when LIS2MDL_HARDIRON_EN is 1. The ODR field does not set
+ * the rate of software-triggered single measurements.
  * CFG_REG_A/C are fixed in the .c file; the CFG_REG_B.LPF bit is
  * selected by LIS2MDL_LPF in sysconf.h.
  *
@@ -50,6 +51,10 @@
  *   scheduled with vTaskDelayUntil().
  * - LIS2MDL_LPF: 0 disables the sensor digital low-pass filter (default);
  *   1 enables it in CFG_REG_B for this state machine.
+ * - LIS2MDL_HARDIRON_EN: 0 skips hard-iron offset programming;
+ *   1 writes and reads back LIS2MDL_HARDIRON_X/Y/Z on each reset.
+ * - LIS2MDL_HARDIRON_X/Y/Z: signed 16-bit offset values (LSB),
+ *   required when LIS2MDL_HARDIRON_EN is 1.
  * - LIS2MDL_WAIT_ISR_SIG_TMO_MS: maximum semaphore wait for DRDY in ms.
  * - LIS2MDL_DEBUG_STAT: log raw STATUS_REG after DRDY when set to 1.
  * - LIS2MDL_REPORT_LSB: log raw X/Y/Z and raw temperature values when set to 1.

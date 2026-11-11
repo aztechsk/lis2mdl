@@ -368,13 +368,17 @@ int lis2mdl_stat(lis2mdl lis, uint8_t *stat);
  *
  * Triggers SOFT_RST, restores SPI interface selection when needed, checks
  * WHO_AM_I, then triggers REBOOT, waits 25 ms, restores the interface and
- * checks WHO_AM_I again. It does not configure the measurement mode or
- * update the configuration shadow fields in the descriptor. Their previous
- * contents must not be treated as the reset sensor's current configuration.
+ * checks WHO_AM_I again. With LIS2MDL_HARDIRON_EN set to 1, it
+ * then writes and reads back the configured signed X/Y/Z hard-iron
+ * offsets. This is performed on every reset, including recovery.
+ * It does not configure the measurement mode or update the configuration
+ * shadow fields in the descriptor. Their previous contents must not be
+ * treated as the reset sensor's current configuration.
  *
  * @param[in] lis Initialized bus descriptor.
- * @return 0 on success, -EHW on an unexpected identifier, or a negative
- *         bus error code on a transfer failure.
+ * @return 0 on success, -EHW on an unexpected identifier, -EDATA on
+ *         hard-iron offset readback mismatch, or a negative bus error
+ *         code on a transfer failure.
  * @note This function waits using both microsecond delays and FreeRTOS;
  *       it must run in task context, not in an ISR.
  * @note Reconfigure CFG_REG_A/B/C before using or verifying the shadow.
