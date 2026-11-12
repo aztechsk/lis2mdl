@@ -21,7 +21,7 @@ The low-level driver supports I2C and SPI communication and provides access to s
 - Optional FreeRTOS state machine using the data-ready interrupt
 - Optional continuous 10 Hz state machine using the data-ready interrupt
 - Periodic single-measurement and autonomous continuous acquisition
-- Optional formatted measurement reporting and report callback
+- Optional formatted measurement reporting, text callback and binary sample callback
 
 ## Files
 
@@ -47,7 +47,7 @@ It initializes and configures the sensor, periodically starts single measurement
 
 Public interface of the register-polling state-machine layer.
 
-It provides initialization and, when enabled, registration of a measurement report callback.
+It provides initialization and, when enabled, text and binary sample callbacks.
 
 ### `lis2mdl_stm_intr.c`
 
@@ -59,7 +59,7 @@ It initializes and configures the sensor, periodically starts single measurement
 
 Public interface of the interrupt-driven state-machine layer.
 
-It provides initialization and, when enabled, registration of a measurement report callback.
+It provides initialization and, when enabled, text and binary sample callbacks.
 
 ### `lis2mdl_stm_cont.c`
 
@@ -74,7 +74,7 @@ Offset cancellation is automatic in continuous mode and does not replace hard-ir
 
 Public interface and configuration documentation for the continuous-mode state machine.
 
-It provides initialization and, when enabled, registration of a measurement report callback.
+It provides initialization and, when enabled, text and binary sample callbacks.
 
 ## Dependencies
 
@@ -197,13 +197,14 @@ consume the results through optional diagnostic messages or a text callback:
 | `LIS2MDL_REPORT_MG` | X/Y/Z in mG and temperature in degC |
 | `LIS2MDL_REPORT_SI` | X/Y/Z in uT (two decimals) and temperature in degC (three decimals) |
 | `LIS2MDL_REPORT_FN` | Enable `lis2mdl_stm_set_report_fn()` with the same SI-format report text |
+| `LIS2MDL_REPORT_SAMPLE_FN` | Enable `lis2mdl_stm_set_sample_fn()` with a binary `struct lis2mdl_sample` (default 0) |
 | `LIS2MDL_REPORT_MSG_NUM` | Include a rolling report number `000`..`999` in enabled outputs |
 | `LIS2MDL_DEBUG_STAT` | Log sensor status values during acquisition |
 
 These switches control reporting; they do not start acquisition or change
 the sensor configuration. Multiple logging formats can be enabled at once.
 `LIS2MDL_REPORT_FN == 1` enables the callback even when SI console logging
-is disabled. When any reporting option is enabled, the report number
+is disabled. When any text reporting option is enabled, the report number
 advances once per successful STM data read, not once per enabled text format.
 It is not a timestamp or an independently verified sensor-conversion counter.
 
@@ -228,10 +229,33 @@ increments the `report_fn_err_cnt` diagnostic counter. To use this callback in c
 register the callback with `lis2mdl_stm_set_report_fn()`. The two single
 modes use their own initialization functions and the same callback API.
 
-The STM does not provide a typed numeric sample callback, sample timestamps
-or a separate sample queue. Applications needing those interfaces must
-provide them at a higher layer or use the low-level driver with their own
-acquisition control.
+When `LIS2MDL_REPORT_SAMPLE_FN == 1`, the selected STM also exposes:
+
+```c
+void lis2mdl_stm_set_sample_fn(boolean_t (*sample_fn)(const struct lis2mdl_sample *));
+```
+
+The `struct lis2mdl_sample` type is declared in `lis2mdl.h`. It contains the
+signed 16-bit magnetic output-register values in `raw.x_val/y_val/z_val`, the
+signed temperature register value `temp_raw`, magnetic field `x_nt/y_nt/z_nt`
+in integer nanotesla (150 nT/LSB) and `t_mc` in milli-degrees Celsius
+(`25000 + temp_raw * 125`). The sensor output registers can already include
+its internal offset cancellation and configured hardware hard-iron correction.
+No further software calibration is performed by the STM. A sample is delivered
+only after both magnetic and temperature reads succeed.
+
+The binary callback is independent of all text reports. It runs synchronously
+in the acquisition FreeRTOS task, not the ISR. The sample pointer points to
+stack storage valid only until the callback returns, so the client must copy
+it when retaining data. Register the callback during startup; replacement
+while acquisition runs is not synchronized. `NULL` disables reporting. Return
+`TRUE` for success; returning `FALSE` increments `sample_fn_err_cnt` without
+resetting the state machine. Keep the callback bounded and nonblocking (for
+example, `xQueueSend(..., 0)`). No extra task, queue or allocation is required.
+
+The STM does not provide sample timestamps, a sample queue or guaranteed
+lossless delivery. The binary sample also has no report sequence number.
+Applications needing these facilities must implement them at the client level.
 
 ## Errors and diagnostics
 
@@ -244,7 +268,7 @@ failed measurements and no guaranteed reporting cadence during recovery.
 
 The `liss` command prints mode-specific counters, including successful reads,
 overruns, timeouts and state-machine resets; interrupt modes also track DRDY
-anomalies. Callback failures have a counter when callback reporting is enabled.
+anomalies. Text and binary callback failures have independent counters when enabled.
 The report number advances on successful reads, not failed conversions;
 errors and recovery pauses can occur without any sequence gap. It is not a
 hardware sample counter or timing measurement. Applications requiring

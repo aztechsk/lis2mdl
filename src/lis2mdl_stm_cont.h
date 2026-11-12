@@ -63,6 +63,8 @@
  * - LIS2MDL_REPORT_MG: log X/Y/Z in mG and temperature in degC when set to 1.
  * - LIS2MDL_REPORT_SI: log X/Y/Z in uT with two decimals and temperature
  *   in degC with three decimals when set to 1.
+ * - LIS2MDL_REPORT_SAMPLE_FN: enable the binary sample callback when 1
+ *   (default 0); independent of text reporting.
  * - LIS2MDL_REPORT_FN: enable the SI text callback when set to 1.
  * - LIS2MDL_REPORT_MSG_NUM: enable a rolling 000..999 report sequence number.
  * LIS2MDL_MEASURE_PERIOD_MS, LIS2MDL_STATE_MEASURE_MS,
@@ -70,7 +72,8 @@
  * the single-measurement state machines and are not used here.
  * Reporting switches do not modify the sensor configuration.
  *
- * @note Include sysconf.h before this header to define LIS2MDL_REPORT_FN.
+ * @note Include sysconf.h before this header to define LIS2MDL_REPORT_FN
+ *       and optionally LIS2MDL_REPORT_SAMPLE_FN (default 0).
  */
 
 #ifndef LIS2MDL_STM_CONT_H
@@ -80,8 +83,18 @@
 #error "LIS2MDL_REPORT_FN not defined; include sysconf.h before lis2mdl_stm_cont.h"
 #endif
 
+#ifndef LIS2MDL_REPORT_SAMPLE_FN
+#define LIS2MDL_REPORT_SAMPLE_FN 0
+#endif
+#if LIS2MDL_REPORT_SAMPLE_FN != 0 && LIS2MDL_REPORT_SAMPLE_FN != 1
+#error "LIS2MDL_REPORT_SAMPLE_FN must be 0 or 1"
+#endif
+
 #if LIS2MDL_REPORT_FN == 1
 #include <gentyp.h>
+#endif
+#if LIS2MDL_REPORT_SAMPLE_FN == 1
+#include "lis2mdl.h"
 #endif
 
 /**
@@ -119,6 +132,29 @@ void init_lis2mdl_stm_cont(void);
  * @note Only declared when LIS2MDL_REPORT_FN == 1.
  */
 void lis2mdl_stm_set_report_fn(boolean_t (*report_fn)(const char *));
+#endif
+
+#if LIS2MDL_REPORT_SAMPLE_FN == 1
+/**
+ * @brief Install or clear the binary measurement callback.
+ *
+ * After each successful magnetic and temperature read, the acquisition
+ * FreeRTOS task calls sample_fn with signed register outputs and converted
+ * nT/mC values (see struct lis2mdl_sample). No callback is made on a failed
+ * acquisition. The callback is independent of text reporting and logging.
+ * Returning FALSE increments sample_fn_err_cnt without resetting acquisition.
+ *
+ * @param[in] sample_fn Callback to install, or NULL to disable callbacks.
+ * @note Called synchronously in task context, never in an ISR. Keep work
+ *       bounded and nonblocking, for example xQueueSend(..., 0).
+ * @note The pointer and sample storage are valid only during the callback;
+ *       copy the data if it must outlive the call. No queue, timestamp or
+ *       lossless delivery guarantee is provided by this interface.
+ * @note Register during initialization; replacing the callback while the
+ *       acquisition task is running is not synchronized.
+ * @note Only declared when LIS2MDL_REPORT_SAMPLE_FN == 1.
+ */
+void lis2mdl_stm_set_sample_fn(boolean_t (*sample_fn)(const struct lis2mdl_sample *));
 #endif
 
 #endif

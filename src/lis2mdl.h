@@ -141,6 +141,27 @@ struct lis2mdl_data {
 	int16_t z_val; /**< Z axis. */
 };
 
+/**
+ * @brief Completed LIS2MDL measurement delivered to an STM client.
+ *
+ * raw holds the signed sensor X/Y/Z output-register values (1.5 mG/LSB).
+ * These may already include sensor-internal offset cancellation and
+ * hardware hard-iron compensation. temp_raw is the signed temperature
+ * output-register value. The other fields convert these same outputs to
+ * integer SI units: 150 nT/LSB and T [mC] = 25000 + temp_raw * 125.
+ *
+ * All four channels have been read successfully when this structure is
+ * passed to the callback. Values have no timestamps or validity flags.
+ */
+struct lis2mdl_sample {
+	struct lis2mdl_data raw; /**< Sensor output-register X/Y/Z values in LSB. */
+	int16_t temp_raw; /**< Signed temperature output-register value. */
+	int32_t x_nt; /**< X magnetic field in nanotesla. */
+	int32_t y_nt; /**< Y magnetic field in nanotesla. */
+	int32_t z_nt; /**< Z magnetic field in nanotesla. */
+	int32_t t_mc; /**< Temperature in milli-degrees Celsius. */
+};
+
 /** @brief Configuration registers selectable through the configuration API. */
 enum lis2mdl_cfg_r {
 	LIS2MDL_CFG_R_A,

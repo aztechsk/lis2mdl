@@ -65,6 +65,9 @@ static SemaphoreHandle_t isr_sig;
 static boolean_t (*report_clbk)(const char *);
 static char *report_buf;
 #endif
+#if LIS2MDL_REPORT_SAMPLE_FN == 1
+static boolean_t (*sample_clbk)(const struct lis2mdl_sample *);
+#endif
 
 static struct {
 	unsigned int get_data_cnt;
@@ -75,6 +78,9 @@ static struct {
 	unsigned int stm_rst_cnt;
 #if LIS2MDL_REPORT_FN == 1
 	unsigned int report_fn_err_cnt;
+#endif
+#if LIS2MDL_REPORT_SAMPLE_FN == 1
+	unsigned int sample_fn_err_cnt;
 #endif
 } stats;
 
@@ -122,6 +128,16 @@ void init_lis2mdl_stm_cont(void)
 void lis2mdl_stm_set_report_fn(boolean_t (*report_fn)(const char *))
 {
 	report_clbk = report_fn;
+}
+#endif
+
+#if LIS2MDL_REPORT_SAMPLE_FN == 1
+/**
+ * lis2mdl_stm_set_sample_fn
+ */
+void lis2mdl_stm_set_sample_fn(boolean_t (*sample_fn)(const struct lis2mdl_sample *))
+{
+	sample_clbk = sample_fn;
 }
 #endif
 
@@ -368,6 +384,20 @@ static void report_data(const struct lis2mdl_data *mag_data, const int16_t *temp
 	static unsigned int msg_num;
 #endif
 
+#if LIS2MDL_REPORT_SAMPLE_FN == 1
+	if (sample_clbk != NULL) {
+		struct lis2mdl_sample sample;
+		sample.raw = *mag_data;
+		sample.temp_raw = *temp;
+		sample.x_nt = (int32_t) mag_data->x_val * 150;
+		sample.y_nt = (int32_t) mag_data->y_val * 150;
+		sample.z_nt = (int32_t) mag_data->z_val * 150;
+		sample.t_mc = 25000 + (int32_t) *temp * 125;
+		if (!sample_clbk(&sample)) {
+			stats.sample_fn_err_cnt++;
+		}
+	}
+#endif
 #if LIS2MDL_REPORT_LSB == 1
 #if LIS2MDL_REPORT_MSG_NUM == 1
 	msg(INF, "LIS2MDL raw [%03u]: x=%+06d y=%+06d z=%+06d t: %+06d\n",
@@ -473,6 +503,9 @@ static void cmd_liss(void)
 #else
 	msg(INF, "LIS2MDL cnt: intr_pin_low=%u intr_no_data=%u stm_rst=%u\n",
 	    stats.intr_pin_low_cnt, stats.intr_no_data_cnt, stats.stm_rst_cnt);
+#endif
+#if LIS2MDL_REPORT_SAMPLE_FN == 1
+	msg(INF, "LIS2MDL cnt: sample_fn_err=%u\n", stats.sample_fn_err_cnt);
 #endif
 	vTaskPrioritySet(NULL, pr);
 }
